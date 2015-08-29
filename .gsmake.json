@@ -1,0 +1,19 @@
+{
+    "name":"github.com/gsdocker/gsproxy",
+
+    "domain":"task|golang|gslang",
+
+    "import":[
+        {"name":"github.com/gsrpc/gorpc","version":"release/v1.0"}
+    ],
+
+    "properties":{
+        "gsrpc":{
+            "test":["github.com/gsrpc/gsrpc/test/test.gs"]
+        },
+        
+        "gsmake.golang.test" :[
+           {"dir":"./","flags":"-bench . -cpu 4 "}
+        ]
+    }
+}
