@@ -43,6 +43,7 @@ func (server *_ServerTarget) SendMessage(message *gorpc.Message) error {
 
 func (server *_ServerTarget) Close() {
 	server.context.Close()
+	go server.proxy.proxy.CloseServer(server)
 }
 
 type _DeviceTarget struct {
@@ -104,6 +105,7 @@ func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
 
 func (device *_DeviceTarget) Close() {
 	device.context.Close()
+	go device.proxy.proxy.CloseDevice(device)
 }
 
 func (device *_DeviceTarget) ID() gorpc.Device {

@@ -111,7 +111,6 @@ type _Proxy struct {
 	frontend     *net.TCPServer            // frontend
 	backend      *net.TCPServer            // backend
 	proxy        Proxy                     // proxy implement
-	servers      map[string]*_ServerTarget // handle devices
 	devices      map[string]*_DeviceTarget // handle agent clients
 	name         string                    //proxy name
 }
@@ -123,7 +122,6 @@ func (builder *ProxyBuilder) Run(name string) {
 		Log:     gslogger.Get(name),
 		proxy:   builder.proxy,
 		devices: make(map[string]*_DeviceTarget),
-		servers: make(map[string]*_ServerTarget),
 		name:    name,
 	}
 
@@ -196,9 +194,12 @@ func (proxy *_Proxy) addDevice(target *_DeviceTarget) {
 	proxy.Lock()
 	defer proxy.Unlock()
 
+	if old, ok := proxy.devices[target.device.ID]; ok {
+		go old.Close()
+	}
+
 	proxy.devices[target.device.ID] = target
 
-	return
 }
 
 func (proxy *_Proxy) removeDevice(target *_DeviceTarget) {
