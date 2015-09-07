@@ -94,6 +94,10 @@ func (device *_DeviceTarget) OpenHandler(context gorpc.Context) error {
 	return err
 }
 
+func (device *_DeviceTarget) String() string {
+	return device.device.ID
+}
+
 func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
 
 	device.proxy.proxy.CloseDevice(device)

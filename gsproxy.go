@@ -30,6 +30,8 @@ type Server Target
 // Device .
 type Device interface {
 	Target
+	// String implement fmt.Stringer
+	String() string
 	// ID get device id
 	ID() gorpc.Device
 	// Bind bind service by id
@@ -40,11 +42,14 @@ type Device interface {
 
 // Context .
 type Context interface {
+	Name() string
+	Close()
 }
 
 // Proxy .
 type Proxy interface {
-	OpenProxy(context Context)
+	OpenProxy(context Context) error
+	CloseProxy(context Context)
 	CreateServer(server Server) error
 	CloseServer(server Server)
 	CreateDevice(device Device) error
@@ -57,11 +62,14 @@ type ProxyBuilder struct {
 	backend       string            // backend _Server listen addr
 	timeout       time.Duration     // rpc timeout
 	dhkeyResolver net.DHKeyResolver // dhkey resolver
-	proxy         Proxy             // proxy implement
+	f             ProxyF            // proxy implement
 }
 
+// ProxyF .
+type ProxyF func() Proxy
+
 // BuildProxy create new proxy builder
-func BuildProxy(proxy Proxy) *ProxyBuilder {
+func BuildProxy(f ProxyF) *ProxyBuilder {
 	gStr := gsconfig.String("agent.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
 
 	pStr := gsconfig.String("agent.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
@@ -82,7 +90,7 @@ func BuildProxy(proxy Proxy) *ProxyBuilder {
 			return net.NewDHKey(G, P), nil
 		}),
 
-		proxy: proxy,
+		f: f,
 	}
 }
 
@@ -116,11 +124,11 @@ type _Proxy struct {
 }
 
 // Run create new agent _Server instance and run it
-func (builder *ProxyBuilder) Run(name string) {
+func (builder *ProxyBuilder) Run(name string) (Context, error) {
 
 	proxy := &_Proxy{
 		Log:     gslogger.Get(name),
-		proxy:   builder.proxy,
+		proxy:   builder.f(),
 		devices: make(map[string]*_DeviceTarget),
 		name:    name,
 	}
@@ -178,6 +186,23 @@ func (builder *ProxyBuilder) Run(name string) {
 		if err := proxy.frontend.Listen(builder.frontend); err != nil {
 			proxy.E("start agent frontend error :%s", err)
 		}
+	}()
+
+	return proxy, proxy.proxy.OpenProxy(proxy)
+}
+
+func (proxy *_Proxy) Name() string {
+	return proxy.name
+}
+
+func (proxy *_Proxy) Close() {
+
+	go func() {
+		proxy.frontend.Close()
+
+		proxy.backend.Close()
+
+		proxy.proxy.CloseProxy(proxy)
 	}()
 }
 

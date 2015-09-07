@@ -21,6 +21,9 @@ type _MockProxy struct {
 func (mock *_MockProxy) OpenProxy(context Context) {
 }
 
+func (mock *_MockProxy) CloseProxy(context Context) {
+}
+
 func (mock *_MockProxy) CreateServer(server Server) error {
 	log.D("create server (%p)", server)
 	mock.server = server
