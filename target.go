@@ -55,6 +55,7 @@ type _DeviceTarget struct {
 	device       *gorpc.Device     // device
 	context      gorpc.Context     // context
 	servers      map[uint16]Server // servers
+	name         string            // name
 }
 
 func (proxy *_Proxy) newDeviceTarget(name string, dhHandler string, timeout time.Duration, cached int, processors int) gorpc.Sink {
@@ -83,6 +84,8 @@ func (device *_DeviceTarget) OpenHandler(context gorpc.Context) error {
 
 	device.context = context
 
+	device.name = device.device.String()
+
 	err = device.proxy.proxy.CreateDevice(device)
 
 	if err == nil {
@@ -95,7 +98,7 @@ func (device *_DeviceTarget) OpenHandler(context gorpc.Context) error {
 }
 
 func (device *_DeviceTarget) String() string {
-	return device.device.String()
+	return device.name
 }
 
 func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
