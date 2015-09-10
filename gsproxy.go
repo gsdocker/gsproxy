@@ -63,6 +63,7 @@ type ProxyBuilder struct {
 	timeout       time.Duration     // rpc timeout
 	dhkeyResolver net.DHKeyResolver // dhkey resolver
 	f             ProxyF            // proxy implement
+	heartbeat     time.Duration     // client heartbeat timeout
 }
 
 // ProxyF .
@@ -70,9 +71,9 @@ type ProxyF func() Proxy
 
 // BuildProxy create new proxy builder
 func BuildProxy(f ProxyF) *ProxyBuilder {
-	gStr := gsconfig.String("agent.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
+	gStr := gsconfig.String("gsproxy.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
 
-	pStr := gsconfig.String("agent.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
+	pStr := gsconfig.String("gsproxy.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
 
 	G, _ := new(big.Int).SetString(gStr, 0)
 
@@ -80,18 +81,26 @@ func BuildProxy(f ProxyF) *ProxyBuilder {
 
 	return &ProxyBuilder{
 
-		frontend: gsconfig.String("agent.frontend.laddr", ":13512"),
+		frontend: gsconfig.String("gsproxy.frontend.laddr", ":13512"),
 
-		backend: gsconfig.String("agent.backend.laddr", ":15827"),
+		backend: gsconfig.String("gsproxy.backend.laddr", ":15827"),
 
-		timeout: gsconfig.Seconds("agent.rpc.timeout", 5),
+		timeout: gsconfig.Seconds("gsproxy.rpc.timeout", 5),
 
 		dhkeyResolver: net.DHKeyResolve(func(device *gorpc.Device) (*net.DHKey, error) {
 			return net.NewDHKey(G, P), nil
 		}),
 
 		f: f,
+
+		heartbeat: gsconfig.Seconds("gsproxy.heartbeat.timeout", 10),
 	}
+}
+
+// Heartbeat set heartbeat timeout, if timeout equal zero not send Heartbeat
+func (builder *ProxyBuilder) Heartbeat(timeout time.Duration) *ProxyBuilder {
+	builder.heartbeat = timeout
+	return builder
 }
 
 // AddrF set frontend listen address
@@ -138,6 +147,11 @@ func (builder *ProxyBuilder) Run(name string) (Context, error) {
 			fmt.Sprintf("%s-dh-fe", name),
 			func() gorpc.Handler {
 				return net.NewCryptoServer(builder.dhkeyResolver)
+			},
+		).Handler(
+			fmt.Sprintf("%s-heartbeat-fe", name),
+			func() gorpc.Handler {
+				return net.NewHeartbeatHandler(builder.heartbeat)
 			},
 		).Handler(
 			fmt.Sprintf("%s-proxy-fe", name),

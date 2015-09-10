@@ -69,7 +69,7 @@ func (proxy *_Proxy) newDeviceTarget(name string, dhHandler string, timeout time
 
 func (device *_DeviceTarget) OpenHandler(context gorpc.Context) error {
 
-	device.D("open device handler")
+	device.V("open device handler")
 
 	err := device.Sink.OpenHandler(context)
 
@@ -86,7 +86,7 @@ func (device *_DeviceTarget) OpenHandler(context gorpc.Context) error {
 	err = device.proxy.proxy.CreateDevice(device)
 
 	if err == nil {
-		device.D("open device handler -- success")
+		device.V("open device handler -- success")
 
 		device.proxy.addDevice(device)
 	}
@@ -104,7 +104,7 @@ func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
 
 	device.proxy.removeDevice(device)
 
-	device.D("close device handler -- success")
+	device.V("close device handler -- success")
 }
 
 func (device *_DeviceTarget) Close() {
