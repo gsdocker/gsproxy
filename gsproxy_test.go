@@ -136,7 +136,7 @@ func createDevice(name string) (gorpc.Sink, *net.TCPClient) {
 
 	P, _ := new(big.Int).SetString("13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557", 0)
 
-	clientSink := gorpc.NewSink(name, time.Second*5, 1024, 10)
+	clientSink := gorpc.NewSink(name, time.Second*5, 8, 10)
 
 	return clientSink, net.NewTCPClient(
 		"127.0.0.1:13512",
@@ -160,7 +160,7 @@ func createDevice(name string) (gorpc.Sink, *net.TCPClient) {
 }
 
 func createServer(name string) (gorpc.Sink, *net.TCPClient) {
-	clientSink := gorpc.NewSink(name, time.Second*5, 1024, 10)
+	clientSink := gorpc.NewSink(name, time.Second*5, 8, 10)
 
 	clientSink.Register(dispatcher)
 
