@@ -34,7 +34,7 @@ func (handler *_TunnelServerHandler) HandleWrite(context gorpc.Context, message 
 		return message, nil
 	}
 
-	handler.D("backward tunnel message")
+	handler.V("backward tunnel message")
 
 	tunnel, err := gorpc.ReadTunnel(bytes.NewBuffer(message.Content))
 
@@ -47,7 +47,7 @@ func (handler *_TunnelServerHandler) HandleWrite(context gorpc.Context, message 
 		err := device.SendMessage(tunnel.Message)
 
 		if err == nil {
-			handler.D("backward tunnel message -- success")
+			handler.V("backward tunnel message -- success")
 			return nil, nil
 		}
 

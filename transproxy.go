@@ -25,7 +25,7 @@ func transProxyHandle(proxy *_Proxy, deviceHandler string) gorpc.Handler {
 
 func (handler *_TransProxyHandler) OpenHandler(context gorpc.Context) error {
 
-	handler.D("open request handler")
+	handler.V("open request handler")
 
 	device, ok := context.GetHandler(handler.deviceHandler)
 
@@ -35,7 +35,7 @@ func (handler *_TransProxyHandler) OpenHandler(context gorpc.Context) error {
 
 	handler.target = device.(*_DeviceTarget)
 
-	handler.D("open request handler --  success")
+	handler.V("open request handler --  success")
 
 	return nil
 }
@@ -55,7 +55,7 @@ func (handler *_TransProxyHandler) HandleWrite(context gorpc.Context, message *g
 
 	if server, ok := handler.target.bound(request.Service); ok {
 
-		handler.D("forward tunnel(%s) message", handler.target.device)
+		handler.V("forward tunnel(%s) message", handler.target.device)
 
 		tunnel := gorpc.NewTunnel()
 
@@ -78,7 +78,7 @@ func (handler *_TransProxyHandler) HandleWrite(context gorpc.Context, message *g
 		err = server.SendMessage(message)
 
 		if err == nil {
-			handler.D("forward tunnel(%s) message(%p) -- success", handler.target.device, message)
+			handler.V("forward tunnel(%s) message(%p) -- success", handler.target.device, message)
 		} else {
 			handler.E("forward tunnel(%s) message -- failed\n%s", handler.target.device, err)
 		}
