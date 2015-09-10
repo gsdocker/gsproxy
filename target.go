@@ -104,6 +104,8 @@ func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
 
 	device.proxy.removeDevice(device)
 
+	device.Sink.CloseHandler(context)
+
 	device.V("close device handler -- success")
 }
 
