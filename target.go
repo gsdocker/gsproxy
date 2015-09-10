@@ -16,11 +16,11 @@ type _ServerTarget struct {
 	context      gorpc.Context // context
 }
 
-func (proxy *_Proxy) newServerTarget(name string, timeout time.Duration, cached int, processors int) gorpc.Sink {
+func (proxy *_Proxy) newServerTarget(name string, timeout time.Duration, cached int) gorpc.Sink {
 	return &_ServerTarget{
 		Log:   gslogger.Get(name),
 		proxy: proxy,
-		Sink:  gorpc.NewSink(name, timeout, cached, processors),
+		Sink:  gorpc.NewSink(name, timeout, cached),
 	}
 }
 
@@ -58,10 +58,10 @@ type _DeviceTarget struct {
 	name         string            // name
 }
 
-func (proxy *_Proxy) newDeviceTarget(name string, dhHandler string, timeout time.Duration, cached int, processors int) gorpc.Sink {
+func (proxy *_Proxy) newDeviceTarget(name string, dhHandler string, timeout time.Duration, cached int) gorpc.Sink {
 	return &_DeviceTarget{
 		Log:       gslogger.Get(name),
-		Sink:      gorpc.NewSink(name, timeout, cached, processors),
+		Sink:      gorpc.NewSink(name, timeout, cached),
 		proxy:     proxy,
 		dhHandler: dhHandler,
 		servers:   make(map[uint16]Server),
@@ -103,9 +103,13 @@ func (device *_DeviceTarget) String() string {
 
 func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
 
-	device.proxy.proxy.CloseDevice(device)
+	if device.device != nil {
 
-	device.proxy.removeDevice(device)
+		device.proxy.proxy.CloseDevice(device)
+
+		device.proxy.removeDevice(device)
+
+	}
 
 	device.Sink.CloseHandler(context)
 

@@ -160,7 +160,7 @@ func (builder *ProxyBuilder) Run(name string) (Context, error) {
 		).Handler(
 			fmt.Sprintf("%s-sink-fe", name),
 			func() gorpc.Handler {
-				return proxy.newDeviceTarget(fmt.Sprintf("%s-sink-fe", name), fmt.Sprintf("%s-dh-fe", name), builder.timeout, 8, 1)
+				return proxy.newDeviceTarget(fmt.Sprintf("%s-sink-fe", name), fmt.Sprintf("%s-dh-fe", name), builder.timeout, 8)
 			},
 		),
 	)
@@ -174,7 +174,7 @@ func (builder *ProxyBuilder) Run(name string) (Context, error) {
 		).Handler(
 			fmt.Sprintf("%s-sink-be", name),
 			func() gorpc.Handler {
-				return proxy.newServerTarget(fmt.Sprintf("%s-sink-be", name), builder.timeout, 8, 1)
+				return proxy.newServerTarget(fmt.Sprintf("%s-sink-be", name), builder.timeout, 8)
 			},
 		),
 	)
