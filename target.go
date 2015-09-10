@@ -95,7 +95,7 @@ func (device *_DeviceTarget) OpenHandler(context gorpc.Context) error {
 }
 
 func (device *_DeviceTarget) String() string {
-	return device.device.ID
+	return device.device.String()
 }
 
 func (device *_DeviceTarget) CloseHandler(context gorpc.Context) {
@@ -112,15 +112,15 @@ func (device *_DeviceTarget) Close() {
 	go device.proxy.proxy.CloseDevice(device)
 }
 
-func (device *_DeviceTarget) ID() gorpc.Device {
-	return *device.device
+func (device *_DeviceTarget) ID() *gorpc.Device {
+	return device.device
 }
 
 func (device *_DeviceTarget) Bind(id uint16, server Server) {
 	device.Lock()
 	defer device.Unlock()
 
-	device.D("bind server(%d:%p)", id, server)
+	device.V("bind server(%d:%p)", id, server)
 
 	device.servers[id] = server
 }

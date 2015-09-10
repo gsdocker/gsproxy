@@ -33,7 +33,7 @@ type Device interface {
 	// String implement fmt.Stringer
 	String() string
 	// ID get device id
-	ID() gorpc.Device
+	ID() *gorpc.Device
 	// Bind bind service by id
 	Bind(id uint16, server Server)
 	// Unbind unbind service by id
@@ -135,11 +135,6 @@ func (builder *ProxyBuilder) Run(name string) (Context, error) {
 
 	proxy.frontend = net.NewTCPServer(
 		gorpc.BuildPipeline().Handler(
-			fmt.Sprintf("%s-log-fe", name),
-			func() gorpc.Handler {
-				return gorpc.LoggerHandler()
-			},
-		).Handler(
 			fmt.Sprintf("%s-dh-fe", name),
 			func() gorpc.Handler {
 				return net.NewCryptoServer(builder.dhkeyResolver)
@@ -159,11 +154,6 @@ func (builder *ProxyBuilder) Run(name string) (Context, error) {
 
 	proxy.backend = net.NewTCPServer(
 		gorpc.BuildPipeline().Handler(
-			fmt.Sprintf("%s-log-be", name),
-			func() gorpc.Handler {
-				return gorpc.LoggerHandler()
-			},
-		).Handler(
 			fmt.Sprintf("%s-be", name),
 			func() gorpc.Handler {
 				return TunnelServerHandler(proxy)
