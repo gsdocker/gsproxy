@@ -1,7 +1,6 @@
 package gsproxy
 
 import (
-	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -9,70 +8,66 @@ import (
 	"github.com/gsdocker/gsconfig"
 	"github.com/gsdocker/gslogger"
 	"github.com/gsrpc/gorpc"
-	"github.com/gsrpc/gorpc/net"
+	"github.com/gsrpc/gorpc/handler"
+	"github.com/gsrpc/gorpc/tcp"
 )
 
-// Target Proxied Endpoint
-type Target interface {
+var (
+	dhHandler         = "gsproxy-dh"
+	transProxyHandler = "gsproxy-trans"
+)
+
+// Context .
+type Context interface {
+	String() string
+	// Close close proxy
 	Close()
-	// Mixin MessageChannel
-	gorpc.MessageChannel
-	// Unreigster dispatcher
-	Unregister(dispatcher gorpc.Dispatcher)
-	// Register dispatcher
-	Register(dispatcher gorpc.Dispatcher)
 }
 
-// Server .
-type Server Target
+// Server server
+type Server gorpc.Pipeline
 
-// Device .
-type Device interface {
-	Target
-	// String implement fmt.Stringer
-	String() string
-	// ID get device id
-	ID() *gorpc.Device
+// Client proxy client
+type Client interface {
+	gorpc.Pipeline
 	// Bind bind service by id
 	Bind(id uint16, server Server)
 	// Unbind unbind service by id
 	Unbind(id uint16)
-}
-
-// Context .
-type Context interface {
-	Name() string
-	Close()
+	// Device get device name
+	Device() *gorpc.Device
 }
 
 // Proxy .
 type Proxy interface {
-	OpenProxy(context Context) error
-	CloseProxy(context Context)
-	CreateServer(server Server) error
-	CloseServer(server Server)
-	CreateDevice(device Device) error
-	CloseDevice(device Device)
+	// Register register current proxy server
+	Register(context Context)
+	// Unregister unregister proxy
+	Unregister(context Context)
+	// AddServer add server to proxy session
+	AddServer(context Context, server Server) error
+	// RemoveServer remote server from proxy session
+	RemoveServer(context Context, server Server)
+	// AddClient add client to proxy session
+	AddClient(context Context, client Client) error
+	// RemoveClient remote client from proxy session
+	RemoveClient(context Context, client Client)
 }
 
 // ProxyBuilder gsproxy builder
 type ProxyBuilder struct {
-	frontend      string            // frontend _Server listen addr
-	backend       string            // backend _Server listen addr
-	timeout       time.Duration     // rpc timeout
-	dhkeyResolver net.DHKeyResolver // dhkey resolver
-	f             ProxyF            // proxy implement
-	heartbeat     time.Duration     // client heartbeat timeout
+	laddrF        string                // frontend tcp listen address
+	laddrE        string                // backend tcp listen address
+	timeout       time.Duration         // rpc timeout
+	dhkeyResolver handler.DHKeyResolver // dhkey resolver
+	proxy         Proxy                 // proxy provider
 }
 
-// ProxyF .
-type ProxyF func() Proxy
-
 // BuildProxy create new proxy builder
-func BuildProxy(f ProxyF) *ProxyBuilder {
-	gStr := gsconfig.String("gsproxy.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
+func BuildProxy(proxy Proxy) *ProxyBuilder {
+	gStr := gsconfig.String("agent.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
 
-	pStr := gsconfig.String("gsproxy.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
+	pStr := gsconfig.String("agent.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
 
 	G, _ := new(big.Int).SetString(gStr, 0)
 
@@ -80,159 +75,116 @@ func BuildProxy(f ProxyF) *ProxyBuilder {
 
 	return &ProxyBuilder{
 
-		frontend: gsconfig.String("gsproxy.frontend.laddr", ":13512"),
+		laddrF: gsconfig.String("agent.frontend.laddr", ":13512"),
 
-		backend: gsconfig.String("gsproxy.backend.laddr", ":15827"),
+		laddrE: gsconfig.String("agent.backend.laddr", ":15827"),
 
-		timeout: gsconfig.Seconds("gsproxy.rpc.timeout", 5),
+		timeout: gsconfig.Seconds("agent.rpc.timeout", 5),
 
-		dhkeyResolver: net.DHKeyResolve(func(device *gorpc.Device) (*net.DHKey, error) {
-			return net.NewDHKey(G, P), nil
+		dhkeyResolver: handler.DHKeyResolve(func(device *gorpc.Device) (*handler.DHKey, error) {
+			return handler.NewDHKey(G, P), nil
 		}),
 
-		f: f,
-
-		heartbeat: gsconfig.Seconds("gsproxy.heartbeat.timeout", 10),
+		proxy: proxy,
 	}
-}
-
-// Heartbeat set heartbeat timeout, if timeout equal zero not send Heartbeat
-func (builder *ProxyBuilder) Heartbeat(timeout time.Duration) *ProxyBuilder {
-	builder.heartbeat = timeout
-	return builder
 }
 
 // AddrF set frontend listen address
 func (builder *ProxyBuilder) AddrF(laddr string) *ProxyBuilder {
-	builder.frontend = laddr
+	builder.laddrF = laddr
 	return builder
 }
 
 // AddrB set backend listen address
 func (builder *ProxyBuilder) AddrB(laddr string) *ProxyBuilder {
-	builder.backend = laddr
+	builder.laddrE = laddr
 	return builder
 }
 
 // DHKeyResolver set frontend dhkey resolver
-func (builder *ProxyBuilder) DHKeyResolver(dhkeyResolver net.DHKeyResolver) *ProxyBuilder {
+func (builder *ProxyBuilder) DHKeyResolver(dhkeyResolver handler.DHKeyResolver) *ProxyBuilder {
 	builder.dhkeyResolver = dhkeyResolver
 	return builder
 }
 
-// _Proxy .
 type _Proxy struct {
-	sync.RWMutex                           // mutex
-	gslogger.Log                           // mixin log APIs
-	frontend     *net.TCPServer            // frontend
-	backend      *net.TCPServer            // backend
-	proxy        Proxy                     // proxy implement
-	devices      map[string]*_DeviceTarget // handle agent clients
-	name         string                    //proxy name
+	sync.RWMutex                     // mutex
+	gslogger.Log                     // mixin log APIs
+	name         string              //proxy name
+	frontend     *tcp.Server         // frontend
+	backend      *tcp.Server         // backend
+	proxy        Proxy               // proxy implement
+	clients      map[string]*_Client // handle agent clients
 }
 
-// Run create new agent _Server instance and run it
-func (builder *ProxyBuilder) Run(name string) (Context, error) {
+// Build .
+func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Context {
 
 	proxy := &_Proxy{
-		Log:     gslogger.Get(name),
-		proxy:   builder.f(),
-		devices: make(map[string]*_DeviceTarget),
+		Log:     gslogger.Get("gsproxy"),
+		proxy:   builder.proxy,
+		clients: make(map[string]*_Client),
 		name:    name,
 	}
 
-	proxy.frontend = net.NewTCPServer(
-		gorpc.BuildPipeline().Handler(
-			fmt.Sprintf("%s-dh-fe", name),
+	proxy.frontend = tcp.NewServer(
+		gorpc.BuildPipeline(executor).Handler(
+			"gsproxy-dh",
 			func() gorpc.Handler {
-				return net.NewCryptoServer(builder.dhkeyResolver)
-			},
-		).Handler(
-			fmt.Sprintf("%s-heartbeat-fe", name),
-			func() gorpc.Handler {
-				return net.NewHeartbeatHandler(builder.heartbeat)
-			},
-		).Handler(
-			fmt.Sprintf("%s-proxy-fe", name),
-			func() gorpc.Handler {
-				return transProxyHandle(proxy, fmt.Sprintf("%s-sink-fe", name))
-			},
-		).Handler(
-			fmt.Sprintf("%s-sink-fe", name),
-			func() gorpc.Handler {
-				return proxy.newDeviceTarget(fmt.Sprintf("%s-sink-fe", name), fmt.Sprintf("%s-dh-fe", name), builder.timeout, 8)
+				return handler.NewCryptoServer(builder.dhkeyResolver)
 			},
 		),
+	).EvtNewPipeline(
+		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
+			proxy.addClient(pipeline)
+		}),
+	).EvtClosePipeline(
+		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
+			proxy.removeClient(pipeline)
+		}),
 	)
 
-	proxy.backend = net.NewTCPServer(
-		gorpc.BuildPipeline().Handler(
-			fmt.Sprintf("%s-be", name),
-			func() gorpc.Handler {
-				return TunnelServerHandler(proxy)
-			},
-		).Handler(
-			fmt.Sprintf("%s-sink-be", name),
-			func() gorpc.Handler {
-				return proxy.newServerTarget(fmt.Sprintf("%s-sink-be", name), builder.timeout, 8)
-			},
-		),
+	proxy.backend = tcp.NewServer(
+		gorpc.BuildPipeline(executor).Handler("tunnel", proxy.newTunnelServer),
+	).EvtNewPipeline(
+		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
+
+			proxy.proxy.AddServer(proxy, Server(pipeline))
+		}),
+	).EvtClosePipeline(
+		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
+			proxy.proxy.RemoveServer(proxy, Server(pipeline))
+		}),
 	)
 
 	go func() {
-		if err := proxy.backend.Listen(builder.backend); err != nil {
+		if err := proxy.backend.Listen(builder.laddrE); err != nil {
 			proxy.E("start agent backend error :%s", err)
 		}
 	}()
 
 	go func() {
-		if err := proxy.frontend.Listen(builder.frontend); err != nil {
+		if err := proxy.frontend.Listen(builder.laddrF); err != nil {
 			proxy.E("start agent frontend error :%s", err)
 		}
 	}()
 
-	return proxy, proxy.proxy.OpenProxy(proxy)
+	return proxy
 }
 
-func (proxy *_Proxy) Name() string {
+func (proxy *_Proxy) String() string {
 	return proxy.name
 }
 
 func (proxy *_Proxy) Close() {
 
-	go func() {
-		proxy.frontend.Close()
-
-		proxy.backend.Close()
-
-		proxy.proxy.CloseProxy(proxy)
-	}()
 }
 
-func (proxy *_Proxy) device(id *gorpc.Device) (target *_DeviceTarget, ok bool) {
+func (proxy *_Proxy) client(device *gorpc.Device) (*_Client, bool) {
 	proxy.RLock()
 	defer proxy.RUnlock()
 
-	target, ok = proxy.devices[id.ID]
+	client, ok := proxy.clients[device.String()]
 
-	return
-}
-
-func (proxy *_Proxy) addDevice(target *_DeviceTarget) {
-	proxy.Lock()
-	defer proxy.Unlock()
-
-	if old, ok := proxy.devices[target.device.ID]; ok {
-		go old.Close()
-	}
-
-	proxy.devices[target.device.ID] = target
-
-}
-
-func (proxy *_Proxy) removeDevice(target *_DeviceTarget) {
-	proxy.Lock()
-	defer proxy.Unlock()
-
-	delete(proxy.devices, target.device.ID)
+	return client, ok
 }
