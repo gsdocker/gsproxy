@@ -29,7 +29,9 @@ type Server gorpc.Pipeline
 
 // Client proxy client
 type Client interface {
-	gorpc.Pipeline
+	AddService(dispatcher gorpc.Dispatcher)
+
+	removeService(dispatcher gorpc.Dispatcher)
 	// Bind bind service by id
 	Bind(id uint16, server Server)
 	// Unbind unbind service by id
@@ -41,7 +43,7 @@ type Client interface {
 // Proxy .
 type Proxy interface {
 	// Register register current proxy server
-	Register(context Context)
+	Register(context Context) error
 	// Unregister unregister proxy
 	Unregister(context Context)
 	// AddServer add server to proxy session
@@ -101,6 +103,12 @@ func (builder *ProxyBuilder) AddrB(laddr string) *ProxyBuilder {
 	return builder
 }
 
+// Heartbeat .
+func (builder *ProxyBuilder) Heartbeat(timeout time.Duration) *ProxyBuilder {
+	builder.timeout = timeout
+	return builder
+}
+
 // DHKeyResolver set frontend dhkey resolver
 func (builder *ProxyBuilder) DHKeyResolver(dhkeyResolver handler.DHKeyResolver) *ProxyBuilder {
 	builder.dhkeyResolver = dhkeyResolver
@@ -133,15 +141,15 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 			func() gorpc.Handler {
 				return handler.NewCryptoServer(builder.dhkeyResolver)
 			},
+		).Handler(
+			"gsproxy-hb",
+			func() gorpc.Handler {
+				return handler.NewHeartbeatHandler(builder.timeout)
+			},
+		).Handler(
+			"gsproxy-client",
+			proxy.newClientHandler,
 		),
-	).EvtNewPipeline(
-		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
-			proxy.addClient(pipeline)
-		}),
-	).EvtClosePipeline(
-		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
-			proxy.removeClient(pipeline)
-		}),
 	)
 
 	proxy.backend = tcp.NewServer(
@@ -187,4 +195,36 @@ func (proxy *_Proxy) client(device *gorpc.Device) (*_Client, bool) {
 	client, ok := proxy.clients[device.String()]
 
 	return client, ok
+}
+
+func (proxy *_Proxy) addClient(client *_Client) {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	if client, ok := proxy.clients[client.device.String()]; ok {
+
+		proxy.proxy.RemoveClient(proxy, client)
+
+		client.Close()
+	}
+
+	proxy.clients[client.device.String()] = client
+
+	proxy.proxy.AddClient(proxy, client)
+}
+
+func (proxy *_Proxy) removeClient(client *_Client) {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	device := client.device
+
+	if old, ok := proxy.clients[device.String()]; ok && client == old {
+
+		proxy.proxy.RemoveClient(proxy, client)
+
+		client.Close()
+	}
 }

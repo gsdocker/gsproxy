@@ -7,55 +7,78 @@ import (
 )
 
 type _Client struct {
-	gslogger.Log                 // mixin Log APIs
-	name           string        // client name
-	gorpc.Pipeline               // Mixin pipeline
-	context        *_Proxy       // proxy belongs to
-	device         *gorpc.Device // device name
+	gslogger.Log                // mixin Log APIs
+	name         string         // client name
+	pipeline     gorpc.Pipeline // Mixin pipeline
+	context      *_Proxy        // proxy belongs to
+	device       *gorpc.Device  // device name
+	sink         gorpc.Sink     // sink
 }
 
-func (proxy *_Proxy) addClient(pipeline gorpc.Pipeline) {
+func (proxy *_Proxy) newClientHandler() gorpc.Handler {
 
-	dh, _ := pipeline.Handler(dhHandler)
+	return &_Client{
+		Log:     gslogger.Get("gsproxy-client"),
+		context: proxy,
+	}
+}
+
+func (client *_Client) Register(context gorpc.Context) error {
+	return nil
+}
+
+func (client *_Client) Active(context gorpc.Context) error {
+
+	dh, _ := context.Pipeline().Handler(dhHandler)
 
 	device := dh.(handler.CryptoServer).GetDevice()
 
-	proxy.Lock()
-	defer proxy.Unlock()
+	client.pipeline = context.Pipeline()
 
-	if client, ok := proxy.clients[device.String()]; ok {
+	client.device = device
 
-		proxy.proxy.RemoveClient(proxy, client)
+	client.context.addClient(client)
 
-		client.Close()
-	}
-
-	client := &_Client{
-		Pipeline: pipeline,
-		context:  proxy,
-		name:     device.String(),
-		device:   device,
-	}
-
-	proxy.clients[device.String()] = client
-
-	proxy.proxy.AddClient(proxy, client)
+	return nil
 }
 
-func (proxy *_Proxy) removeClient(pipeline gorpc.Pipeline) {
-	dh, _ := pipeline.Handler(dhHandler)
+func (client *_Client) Unregister(context gorpc.Context) {
 
-	device := dh.(handler.CryptoServer).GetDevice()
+}
 
-	proxy.Lock()
-	defer proxy.Unlock()
-
-	if client, ok := proxy.clients[device.String()]; ok {
-
-		proxy.proxy.RemoveClient(proxy, client)
-
-		client.Close()
+func (client *_Client) Inactive(context gorpc.Context) {
+	if client.device != nil {
+		client.context.removeClient(client)
 	}
+}
+
+func (client *_Client) MessageReceived(context gorpc.Context, message *gorpc.Message) (*gorpc.Message, error) {
+
+	return message, nil
+}
+func (client *_Client) MessageSending(context gorpc.Context, message *gorpc.Message) (*gorpc.Message, error) {
+
+	return message, nil
+}
+
+func (client *_Client) Panic(context gorpc.Context, err error) {
+
+}
+
+func (client *_Client) Close() {
+	client.pipeline.Close()
+}
+
+func (client *_Client) AddService(dispatcher gorpc.Dispatcher) {
+	client.sink.AddService(dispatcher)
+}
+
+func (client *_Client) removeService(dispatcher gorpc.Dispatcher) {
+	client.sink.RemoveService(dispatcher)
+}
+
+func (client *_Client) SendMessage(message *gorpc.Message) error {
+	return client.pipeline.SendMessage(message)
 }
 
 func (client *_Client) String() string {
@@ -71,10 +94,10 @@ func (client *_Client) Device() *gorpc.Device {
 }
 
 func (client *_Client) Bind(id uint16, server Server) {
-	handler, _ := client.Pipeline.Handler(transProxyHandler)
+	handler, _ := client.pipeline.Handler(transProxyHandler)
 	handler.(*_TransProxyHandler).bind(id, server)
 }
 func (client *_Client) Unbind(id uint16) {
-	handler, _ := client.Pipeline.Handler(transProxyHandler)
+	handler, _ := client.pipeline.Handler(transProxyHandler)
 	handler.(*_TransProxyHandler).unbind(id)
 }
