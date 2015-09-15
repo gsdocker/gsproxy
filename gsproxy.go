@@ -137,6 +137,9 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 
 	proxy.frontend = tcp.NewServer(
 		gorpc.BuildPipeline(executor).Handler(
+			"gsproxy-profile",
+			gorpc.ProfileHandler,
+		).Handler(
 			"gsproxy-dh",
 			func() gorpc.Handler {
 				return handler.NewCryptoServer(builder.dhkeyResolver)
