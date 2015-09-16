@@ -12,7 +12,6 @@ type _Client struct {
 	pipeline     gorpc.Pipeline // Mixin pipeline
 	context      *_Proxy        // proxy belongs to
 	device       *gorpc.Device  // device name
-	sink         gorpc.Sink     // sink
 }
 
 func (proxy *_Proxy) newClientHandler() gorpc.Handler {
@@ -24,6 +23,7 @@ func (proxy *_Proxy) newClientHandler() gorpc.Handler {
 }
 
 func (client *_Client) Register(context gorpc.Context) error {
+
 	return nil
 }
 
@@ -70,11 +70,11 @@ func (client *_Client) Close() {
 }
 
 func (client *_Client) AddService(dispatcher gorpc.Dispatcher) {
-	client.sink.AddService(dispatcher)
+	client.pipeline.AddService(dispatcher)
 }
 
 func (client *_Client) removeService(dispatcher gorpc.Dispatcher) {
-	client.sink.RemoveService(dispatcher)
+	client.pipeline.RemoveService(dispatcher)
 }
 
 func (client *_Client) SendMessage(message *gorpc.Message) error {

@@ -15,6 +15,7 @@ import (
 var (
 	dhHandler         = "gsproxy-dh"
 	transProxyHandler = "gsproxy-trans"
+	tunnelHandler     = "gsproxy-tunnel"
 )
 
 // Context .
@@ -123,6 +124,8 @@ type _Proxy struct {
 	backend      *tcp.Server         // backend
 	proxy        Proxy               // proxy implement
 	clients      map[string]*_Client // handle agent clients
+	idgen        byte                // tunnel id gen
+	tunnels      map[byte]byte       // tunnels
 }
 
 // Build .
@@ -133,6 +136,7 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 		proxy:   builder.proxy,
 		clients: make(map[string]*_Client),
 		name:    name,
+		tunnels: make(map[byte]byte),
 	}
 
 	proxy.frontend = tcp.NewServer(
@@ -150,13 +154,16 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 				return handler.NewHeartbeatHandler(builder.timeout)
 			},
 		).Handler(
+			transProxyHandler,
+			proxy.newTransProxyHandler,
+		).Handler(
 			"gsproxy-client",
 			proxy.newClientHandler,
 		),
-	)
+	).Name("gsproxy-acceptor")
 
 	proxy.backend = tcp.NewServer(
-		gorpc.BuildPipeline(executor).Handler("tunnel", proxy.newTunnelServer),
+		gorpc.BuildPipeline(executor).Handler(tunnelHandler, proxy.newTunnelServer),
 	).EvtNewPipeline(
 		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
 
@@ -164,9 +171,14 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 		}),
 	).EvtClosePipeline(
 		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
+
+			tunnel, _ := pipeline.Handler(tunnelHandler)
+
+			proxy.removeTunnelID(tunnel.(*_TunnelServerHandler).ID())
+
 			proxy.proxy.RemoveServer(proxy, Server(pipeline))
 		}),
-	)
+	).Name("gsproxy-tunnel-server")
 
 	go func() {
 		if err := proxy.backend.Listen(builder.laddrE); err != nil {
@@ -189,6 +201,30 @@ func (proxy *_Proxy) String() string {
 
 func (proxy *_Proxy) Close() {
 
+}
+
+func (proxy *_Proxy) removeTunnelID(id byte) {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	delete(proxy.tunnels, id)
+}
+
+func (proxy *_Proxy) tunnelID() byte {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	for {
+		proxy.idgen++
+
+		if _, ok := proxy.tunnels[proxy.idgen]; !ok && proxy.idgen != 0 {
+			proxy.tunnels[proxy.idgen] = 0
+
+			return proxy.idgen
+		}
+	}
 }
 
 func (proxy *_Proxy) client(device *gorpc.Device) (*_Client, bool) {
