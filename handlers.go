@@ -180,13 +180,39 @@ func (handler *_TransProxyHandler) forward(server Server, message *gorpc.Message
 	return err
 }
 
+func (handler *_TransProxyHandler) tunnel(agent byte) (Server, bool) {
+
+	handler.RLock()
+	defer handler.RUnlock()
+
+	server, ok := handler.tunnels[agent]
+
+	return server, ok
+}
+
+func (handler *_TransProxyHandler) server(service uint16) (Server, bool) {
+
+	handler.RLock()
+	defer handler.RUnlock()
+
+	server, ok := handler.servers[service]
+
+	return server, ok
+}
+
 func (handler *_TransProxyHandler) MessageReceived(context gorpc.Context, message *gorpc.Message) (*gorpc.Message, error) {
 
 	if message.Code == gorpc.CodeResponse {
 
-		if server, ok := handler.tunnels[message.Agent]; ok {
+		if server, ok := handler.tunnel(message.Agent); ok {
 
-			return nil, handler.forward(server, message)
+			err := handler.forward(server, message)
+
+			if err != nil {
+				context.Close()
+			}
+
+			return nil, err
 		}
 
 		return message, nil
@@ -206,7 +232,7 @@ func (handler *_TransProxyHandler) MessageReceived(context gorpc.Context, messag
 
 	service := request.Service
 
-	if server, ok := handler.servers[service]; ok {
+	if server, ok := handler.server(service); ok {
 
 		handler.V("forward tunnel(%s) message", handler.device)
 
@@ -230,11 +256,13 @@ func (handler *_TransProxyHandler) MessageReceived(context gorpc.Context, messag
 
 		err = server.SendMessage(message)
 
-		if err == nil {
-			handler.V("forward tunnel(%s) message(%p) -- success", handler.device, message)
-		} else {
-			handler.E("forward tunnel(%s) message -- failed\n%s", handler.device, err)
+		if err != nil {
+			context.Close()
+			handler.V("forward tunnel(%s) message(%p) -- failed\n%s", handler.device, message, err)
+			return nil, err
 		}
+
+		handler.V("forward tunnel(%s) message(%p) -- success", handler.device, message)
 
 		return nil, err
 	}
