@@ -32,7 +32,7 @@ type Server gorpc.Pipeline
 type Client interface {
 	AddService(dispatcher gorpc.Dispatcher)
 
-	removeService(dispatcher gorpc.Dispatcher)
+	RemoveService(dispatcher gorpc.Dispatcher)
 	// Bind bind service by id
 	Bind(id uint16, server Server)
 	// Unbind unbind service by id
@@ -162,22 +162,29 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 		),
 	).Name("gsproxy-acceptor")
 
-	proxy.backend = tcp.NewServer(
-		gorpc.BuildPipeline(executor).Handler(tunnelHandler, proxy.newTunnelServer),
-	).EvtNewPipeline(
-		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
-
+	stateHandler := handler.NewStateHandler(func(pipeline gorpc.Pipeline, state gorpc.State) {
+		switch state {
+		case gorpc.StateConnected:
 			proxy.proxy.AddServer(proxy, Server(pipeline))
-		}),
-	).EvtClosePipeline(
-		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
-
+		case gorpc.StateDisconnect:
 			tunnel, _ := pipeline.Handler(tunnelHandler)
 
 			proxy.removeTunnelID(tunnel.(*_TunnelServerHandler).ID())
 
 			proxy.proxy.RemoveServer(proxy, Server(pipeline))
-		}),
+		}
+	})
+
+	proxy.backend = tcp.NewServer(
+		gorpc.BuildPipeline(executor).Handler(
+			tunnelHandler,
+			proxy.newTunnelServer,
+		).Handler(
+			"state-handler",
+			func() gorpc.Handler {
+				return stateHandler
+			},
+		),
 	).Name("gsproxy-tunnel-server")
 
 	go func() {

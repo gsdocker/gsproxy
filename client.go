@@ -73,7 +73,7 @@ func (client *_Client) AddService(dispatcher gorpc.Dispatcher) {
 	client.pipeline.AddService(dispatcher)
 }
 
-func (client *_Client) removeService(dispatcher gorpc.Dispatcher) {
+func (client *_Client) RemoveService(dispatcher gorpc.Dispatcher) {
 	client.pipeline.RemoveService(dispatcher)
 }
 
