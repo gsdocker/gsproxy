@@ -93,11 +93,11 @@ func (client *_Client) Device() *gorpc.Device {
 	return client.device
 }
 
-func (client *_Client) Bind(id uint16, server Server) {
+func (client *_Client) TransproxyBind(id uint16, server Server) {
 	handler, _ := client.pipeline.Handler(transProxyHandler)
 	handler.(*_TransProxyHandler).bind(id, server)
 }
-func (client *_Client) Unbind(id uint16) {
+func (client *_Client) TransproxyUnbind(sourceid uint16) {
 	handler, _ := client.pipeline.Handler(transProxyHandler)
-	handler.(*_TransProxyHandler).unbind(id)
+	handler.(*_TransProxyHandler).unbind(sourceid)
 }

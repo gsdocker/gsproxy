@@ -33,10 +33,10 @@ type Client interface {
 	AddService(dispatcher gorpc.Dispatcher)
 
 	RemoveService(dispatcher gorpc.Dispatcher)
-	// Bind bind service by id
-	Bind(id uint16, server Server)
-	// Unbind unbind service by id
-	Unbind(id uint16)
+	// TransproxyBind bind transproxy service by id
+	TransproxyBind(id uint16, server Server)
+	// Unbind unbind transproxy service by id
+	TransproxyUnbind(id uint16)
 	// Device get device name
 	Device() *gorpc.Device
 }
@@ -47,10 +47,10 @@ type Proxy interface {
 	Register(context Context) error
 	// Unregister unregister proxy
 	Unregister(context Context)
-	// AddServer add server to proxy session
-	AddServer(context Context, server Server) error
-	// RemoveServer remote server from proxy session
-	RemoveServer(context Context, server Server)
+	// BindServices add server to proxy session
+	BindServices(context Context, server Server, services []*gorpc.NamedService) error
+	// UnbindServices remote server from proxy session
+	UnbindServices(context Context, server Server)
 	// AddClient add client to proxy session
 	AddClient(context Context, client Client) error
 	// RemoveClient remote client from proxy session
@@ -162,28 +162,10 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 		),
 	).Name("gsproxy-acceptor")
 
-	stateHandler := handler.NewStateHandler(func(pipeline gorpc.Pipeline, state gorpc.State) {
-		switch state {
-		case gorpc.StateConnected:
-			proxy.proxy.AddServer(proxy, Server(pipeline))
-		case gorpc.StateDisconnect:
-			tunnel, _ := pipeline.Handler(tunnelHandler)
-
-			proxy.removeTunnelID(tunnel.(*_TunnelServerHandler).ID())
-
-			proxy.proxy.RemoveServer(proxy, Server(pipeline))
-		}
-	})
-
 	proxy.backend = tcp.NewServer(
 		gorpc.BuildPipeline(executor).Handler(
 			tunnelHandler,
 			proxy.newTunnelServer,
-		).Handler(
-			"state-handler",
-			func() gorpc.Handler {
-				return stateHandler
-			},
 		),
 	).Name("gsproxy-tunnel-server")
 

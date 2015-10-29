@@ -28,7 +28,7 @@ func (handler *_TunnelServerHandler) Register(context gorpc.Context) error {
 }
 
 func (handler *_TunnelServerHandler) Active(context gorpc.Context) error {
-	return nil
+	return gorpc.ErrSkip
 }
 
 func (handler *_TunnelServerHandler) Unregister(context gorpc.Context) {
@@ -36,7 +36,7 @@ func (handler *_TunnelServerHandler) Unregister(context gorpc.Context) {
 }
 
 func (handler *_TunnelServerHandler) Inactive(context gorpc.Context) {
-
+	handler.proxy.proxy.UnbindServices(handler.proxy, context.Pipeline())
 }
 
 func (handler *_TunnelServerHandler) CloseHandler(context gorpc.Context) {
@@ -44,6 +44,21 @@ func (handler *_TunnelServerHandler) CloseHandler(context gorpc.Context) {
 }
 
 func (handler *_TunnelServerHandler) MessageReceived(context gorpc.Context, message *gorpc.Message) (*gorpc.Message, error) {
+
+	if message.Code == gorpc.CodeTunnelWhoAmI {
+
+		whoAmI, err := gorpc.ReadTunnelWhoAmI(bytes.NewBuffer(message.Content))
+
+		if err != nil {
+			return nil, err
+		}
+
+		handler.proxy.proxy.BindServices(handler.proxy, context.Pipeline(), whoAmI.Services)
+
+		context.FireActive()
+
+		return nil, nil
+	}
 
 	if message.Code != gorpc.CodeTunnel {
 		return message, nil
@@ -190,7 +205,7 @@ func (handler *_TransProxyHandler) tunnel(agent byte) (Server, bool) {
 	return server, ok
 }
 
-func (handler *_TransProxyHandler) server(service uint16) (Server, bool) {
+func (handler *_TransProxyHandler) transproxy(service uint16) (Server, bool) {
 
 	handler.RLock()
 	defer handler.RUnlock()
@@ -232,7 +247,7 @@ func (handler *_TransProxyHandler) MessageReceived(context gorpc.Context, messag
 
 	service := request.Service
 
-	if server, ok := handler.server(service); ok {
+	if transproxy, ok := handler.transproxy(service); ok {
 
 		handler.V("forward tunnel(%s) message", handler.device)
 
@@ -254,7 +269,7 @@ func (handler *_TransProxyHandler) MessageReceived(context gorpc.Context, messag
 
 		message.Content = buff.Bytes()
 
-		err = server.SendMessage(message)
+		err = transproxy.SendMessage(message)
 
 		if err != nil {
 			context.Close()
