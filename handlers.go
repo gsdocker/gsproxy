@@ -235,6 +235,7 @@ func (handler *_TransProxyHandler) MessageReceived(context gorpc.Context, messag
 	}
 
 	if message.Code != gorpc.CodeRequest {
+
 		return message, nil
 	}
 

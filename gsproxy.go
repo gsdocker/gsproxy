@@ -68,9 +68,9 @@ type ProxyBuilder struct {
 
 // BuildProxy create new proxy builder
 func BuildProxy(proxy Proxy) *ProxyBuilder {
-	gStr := gsconfig.String("agent.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
+	gStr := gsconfig.String("gsproxy.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
 
-	pStr := gsconfig.String("agent.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
+	pStr := gsconfig.String("gsproxy.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
 
 	G, _ := new(big.Int).SetString(gStr, 0)
 
@@ -78,11 +78,11 @@ func BuildProxy(proxy Proxy) *ProxyBuilder {
 
 	return &ProxyBuilder{
 
-		laddrF: gsconfig.String("agent.frontend.laddr", ":13512"),
+		laddrF: gsconfig.String("gsproxy.frontend.laddr", ":13512"),
 
-		laddrE: gsconfig.String("agent.backend.laddr", ":15827"),
+		laddrE: gsconfig.String("gsproxy.backend.laddr", ":15827"),
 
-		timeout: gsconfig.Seconds("agent.rpc.timeout", 5),
+		timeout: gsconfig.Seconds("gsproxy.rpc.timeout", 5),
 
 		dhkeyResolver: handler.DHKeyResolve(func(device *gorpc.Device) (*handler.DHKey, error) {
 			return handler.NewDHKey(G, P), nil
@@ -250,9 +250,6 @@ func (proxy *_Proxy) removeClient(client *_Client) {
 	device := client.device
 
 	if old, ok := proxy.clients[device.String()]; ok && client == old {
-
 		proxy.proxy.RemoveClient(proxy, client)
-
-		client.Close()
 	}
 }
