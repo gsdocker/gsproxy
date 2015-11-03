@@ -13,6 +13,7 @@ type _Agent struct {
 	gorpc.Sink
 	handler *_TunnelClient
 	id      *gorpc.Device
+	closed  bool
 }
 
 func newAgent(handler *_TunnelClient, device *gorpc.Device) (*_Agent, error) {
@@ -40,6 +41,8 @@ func (agent *_Agent) SendMessage(message *gorpc.Message) error {
 
 func (agent *_Agent) Close() {
 	agent.handler.system.system.UnbindAgent(agent)
+
+	agent.closed = true
 }
 
 // ID agent id
@@ -49,7 +52,7 @@ func (agent *_Agent) ID() *gorpc.Device {
 
 // _TunnelClient .
 type _TunnelClient struct {
-	sync.RWMutex                    // mutex
+	sync.Mutex                      // mutex
 	gslogger.Log                    // mixin log APIs
 	name         string             // tunnel name
 	system       *_System           // system
@@ -106,16 +109,13 @@ func (handler *_TunnelClient) Unregister(context gorpc.Context) {
 
 func (handler *_TunnelClient) Inactive(context gorpc.Context) {
 	for _, agent := range handler.agents {
-		agent.Close()
+		handler.system.system.UnbindAgent(agent)
 	}
 
 	handler.system.removeTunnel(handler.name, handler, context.Pipeline())
 }
 
 func (handler *_TunnelClient) agent(device *gorpc.Device) (*_Agent, error) {
-
-	handler.Lock()
-	defer handler.Unlock()
 
 	if agent, ok := handler.agents[device.String()]; ok {
 		return agent, nil
@@ -157,7 +157,6 @@ func (handler *_TunnelClient) SendMessage(device *gorpc.Device, message *gorpc.M
 }
 
 func (handler *_TunnelClient) Close() {
-
 }
 
 func (handler *_TunnelClient) MessageReceived(context gorpc.Context, message *gorpc.Message) (*gorpc.Message, error) {
