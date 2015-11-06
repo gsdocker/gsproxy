@@ -36,7 +36,7 @@ func (handler *_TunnelServerHandler) Unregister(context gorpc.Context) {
 }
 
 func (handler *_TunnelServerHandler) Inactive(context gorpc.Context) {
-	handler.proxy.proxy.UnbindServices(handler.proxy, context.Pipeline())
+	go handler.proxy.proxy.UnbindServices(handler.proxy, context.Pipeline())
 }
 
 func (handler *_TunnelServerHandler) CloseHandler(context gorpc.Context) {
@@ -46,6 +46,8 @@ func (handler *_TunnelServerHandler) CloseHandler(context gorpc.Context) {
 func (handler *_TunnelServerHandler) MessageReceived(context gorpc.Context, message *gorpc.Message) (*gorpc.Message, error) {
 
 	if message.Code == gorpc.CodeTunnelWhoAmI {
+
+		handler.I("tunnel handshake ......")
 
 		whoAmI, err := gorpc.ReadTunnelWhoAmI(bytes.NewBuffer(message.Content))
 
