@@ -118,6 +118,10 @@ func (handler *_TunnelClient) Inactive(context gorpc.Context) {
 func (handler *_TunnelClient) agent(device *gorpc.Device) (*_Agent, error) {
 
 	if agent, ok := handler.agents[device.String()]; ok {
+		if agent.closed {
+			agent.closed = false
+			handler.system.system.BindAgent(agent)
+		}
 		return agent, nil
 	}
 
@@ -166,8 +170,6 @@ func (handler *_TunnelClient) MessageReceived(context gorpc.Context, message *go
 		return message, nil
 	}
 
-	handler.V("handle tunnel message")
-
 	tunnel, err := gorpc.ReadTunnel(bytes.NewBuffer(message.Content))
 
 	if err != nil {
@@ -175,7 +177,7 @@ func (handler *_TunnelClient) MessageReceived(context gorpc.Context, message *go
 		return nil, err
 	}
 
-	handler.I("dispatch tunnel message to %s", tunnel.ID)
+	handler.D("dispatch tunnel message to %s", tunnel.ID)
 
 	agent, err := handler.agent(tunnel.ID)
 
