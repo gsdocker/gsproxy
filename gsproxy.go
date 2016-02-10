@@ -15,6 +15,7 @@ import (
 var (
 	dhHandler         = "gsproxy-dh"
 	transProxyHandler = "gsproxy-trans"
+	tunnelHandler     = "gsproxy-tunnel"
 )
 
 // Context .
@@ -29,11 +30,13 @@ type Server gorpc.Pipeline
 
 // Client proxy client
 type Client interface {
-	gorpc.Pipeline
-	// Bind bind service by id
-	Bind(id uint16, server Server)
-	// Unbind unbind service by id
-	Unbind(id uint16)
+	AddService(dispatcher gorpc.Dispatcher)
+
+	RemoveService(dispatcher gorpc.Dispatcher)
+	// TransproxyBind bind transproxy service by id
+	TransproxyBind(id uint16, server Server)
+	// Unbind unbind transproxy service by id
+	TransproxyUnbind(id uint16)
 	// Device get device name
 	Device() *gorpc.Device
 }
@@ -41,13 +44,13 @@ type Client interface {
 // Proxy .
 type Proxy interface {
 	// Register register current proxy server
-	Register(context Context)
+	Register(context Context) error
 	// Unregister unregister proxy
 	Unregister(context Context)
-	// AddServer add server to proxy session
-	AddServer(context Context, server Server) error
-	// RemoveServer remote server from proxy session
-	RemoveServer(context Context, server Server)
+	// BindServices add server to proxy session
+	BindServices(context Context, server Server, services []*gorpc.NamedService) error
+	// UnbindServices remote server from proxy session
+	UnbindServices(context Context, server Server)
 	// AddClient add client to proxy session
 	AddClient(context Context, client Client) error
 	// RemoveClient remote client from proxy session
@@ -65,9 +68,9 @@ type ProxyBuilder struct {
 
 // BuildProxy create new proxy builder
 func BuildProxy(proxy Proxy) *ProxyBuilder {
-	gStr := gsconfig.String("agent.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
+	gStr := gsconfig.String("gsproxy.dhkey.G", "6849211231874234332173554215962568648211715948614349192108760170867674332076420634857278025209099493881977517436387566623834457627945222750416199306671083")
 
-	pStr := gsconfig.String("agent.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
+	pStr := gsconfig.String("gsproxy.dhkey.P", "13196520348498300509170571968898643110806720751219744788129636326922565480984492185368038375211941297871289403061486510064429072584259746910423138674192557")
 
 	G, _ := new(big.Int).SetString(gStr, 0)
 
@@ -75,11 +78,11 @@ func BuildProxy(proxy Proxy) *ProxyBuilder {
 
 	return &ProxyBuilder{
 
-		laddrF: gsconfig.String("agent.frontend.laddr", ":13512"),
+		laddrF: gsconfig.String("gsproxy.frontend.laddr", ":13512"),
 
-		laddrE: gsconfig.String("agent.backend.laddr", ":15827"),
+		laddrE: gsconfig.String("gsproxy.backend.laddr", ":15827"),
 
-		timeout: gsconfig.Seconds("agent.rpc.timeout", 5),
+		timeout: gsconfig.Seconds("gsproxy.rpc.timeout", 5),
 
 		dhkeyResolver: handler.DHKeyResolve(func(device *gorpc.Device) (*handler.DHKey, error) {
 			return handler.NewDHKey(G, P), nil
@@ -101,6 +104,12 @@ func (builder *ProxyBuilder) AddrB(laddr string) *ProxyBuilder {
 	return builder
 }
 
+// Heartbeat .
+func (builder *ProxyBuilder) Heartbeat(timeout time.Duration) *ProxyBuilder {
+	builder.timeout = timeout
+	return builder
+}
+
 // DHKeyResolver set frontend dhkey resolver
 func (builder *ProxyBuilder) DHKeyResolver(dhkeyResolver handler.DHKeyResolver) *ProxyBuilder {
 	builder.dhkeyResolver = dhkeyResolver
@@ -115,6 +124,8 @@ type _Proxy struct {
 	backend      *tcp.Server         // backend
 	proxy        Proxy               // proxy implement
 	clients      map[string]*_Client // handle agent clients
+	idgen        byte                // tunnel id gen
+	tunnels      map[byte]byte       // tunnels
 }
 
 // Build .
@@ -125,37 +136,38 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 		proxy:   builder.proxy,
 		clients: make(map[string]*_Client),
 		name:    name,
+		tunnels: make(map[byte]byte),
 	}
 
 	proxy.frontend = tcp.NewServer(
 		gorpc.BuildPipeline(executor).Handler(
+			"gsproxy-profile",
+			gorpc.ProfileHandler,
+		).Handler(
 			"gsproxy-dh",
 			func() gorpc.Handler {
 				return handler.NewCryptoServer(builder.dhkeyResolver)
 			},
+		).Handler(
+			"gsproxy-hb",
+			func() gorpc.Handler {
+				return handler.NewHeartbeatHandler(builder.timeout)
+			},
+		).Handler(
+			transProxyHandler,
+			proxy.newTransProxyHandler,
+		).Handler(
+			"gsproxy-client",
+			proxy.newClientHandler,
 		),
-	).EvtNewPipeline(
-		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
-			proxy.addClient(pipeline)
-		}),
-	).EvtClosePipeline(
-		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
-			proxy.removeClient(pipeline)
-		}),
-	)
+	).Name("gsproxy-acceptor")
 
 	proxy.backend = tcp.NewServer(
-		gorpc.BuildPipeline(executor).Handler("tunnel", proxy.newTunnelServer),
-	).EvtNewPipeline(
-		tcp.EvtNewPipeline(func(pipeline gorpc.Pipeline) {
-
-			proxy.proxy.AddServer(proxy, Server(pipeline))
-		}),
-	).EvtClosePipeline(
-		tcp.EvtClosePipeline(func(pipeline gorpc.Pipeline) {
-			proxy.proxy.RemoveServer(proxy, Server(pipeline))
-		}),
-	)
+		gorpc.BuildPipeline(executor).Handler(
+			tunnelHandler,
+			proxy.newTunnelServer,
+		),
+	).Name("gsproxy-tunnel-server")
 
 	go func() {
 		if err := proxy.backend.Listen(builder.laddrE); err != nil {
@@ -180,6 +192,30 @@ func (proxy *_Proxy) Close() {
 
 }
 
+func (proxy *_Proxy) removeTunnelID(id byte) {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	delete(proxy.tunnels, id)
+}
+
+func (proxy *_Proxy) tunnelID() byte {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	for {
+		proxy.idgen++
+
+		if _, ok := proxy.tunnels[proxy.idgen]; !ok && proxy.idgen != 0 {
+			proxy.tunnels[proxy.idgen] = 0
+
+			return proxy.idgen
+		}
+	}
+}
+
 func (proxy *_Proxy) client(device *gorpc.Device) (*_Client, bool) {
 	proxy.RLock()
 	defer proxy.RUnlock()
@@ -187,4 +223,33 @@ func (proxy *_Proxy) client(device *gorpc.Device) (*_Client, bool) {
 	client, ok := proxy.clients[device.String()]
 
 	return client, ok
+}
+
+func (proxy *_Proxy) addClient(client *_Client) {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	if client, ok := proxy.clients[client.device.String()]; ok {
+
+		proxy.proxy.RemoveClient(proxy, client)
+
+		client.Close()
+	}
+
+	proxy.clients[client.device.String()] = client
+
+	proxy.proxy.AddClient(proxy, client)
+}
+
+func (proxy *_Proxy) removeClient(client *_Client) {
+
+	proxy.Lock()
+	defer proxy.Unlock()
+
+	device := client.device
+
+	if old, ok := proxy.clients[device.String()]; ok && client == old {
+		proxy.proxy.RemoveClient(proxy, client)
+	}
 }

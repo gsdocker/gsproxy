@@ -9,7 +9,7 @@
 
     "properties":{
         "gsrpc":{
-            "test":["github.com/gsrpc/gsrpc","github.com/gsrpc/gsrpc/test/test.gs"]
+            "main":["github.com/gsrpc/gsrpc"]
         },
 
         "gsmake.golang.test" :[
