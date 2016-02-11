@@ -11,3 +11,9 @@ golang = {
 
     tests = { "." }
 }
+
+gsrpc = {
+    dependencies = {
+        { name = "github.com/gsrpc/gorpc" };
+    };
+}
