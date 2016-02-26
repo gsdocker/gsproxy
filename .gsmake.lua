@@ -4,7 +4,7 @@ plugin "github.com/gsmake/golang"
 plugin "github.com/gsmake/gsrpc"
 
 
-golang = {
+properties.golang = {
     dependencies = {
         { name = "github.com/gsrpc/gorpc" };
     };
@@ -12,7 +12,7 @@ golang = {
     tests = { "." }
 }
 
-gsrpc = {
+properties.gsrpc = {
     dependencies = {
         { name = "github.com/gsrpc/gorpc" };
     };
