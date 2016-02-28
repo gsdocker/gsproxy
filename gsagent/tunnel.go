@@ -40,6 +40,7 @@ func (agent *_Agent) SendMessage(message *gorpc.Message) error {
 }
 
 func (agent *_Agent) Close() {
+	agent.ClearServices()
 	agent.handler.system.system.UnbindAgent(agent)
 
 	agent.closed = true
