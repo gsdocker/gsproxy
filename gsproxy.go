@@ -1,6 +1,7 @@
 package gsproxy
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/gsdocker/gslogger"
 	"github.com/gsrpc/gorpc"
 	"github.com/gsrpc/gorpc/handler"
-	"github.com/gsrpc/gorpc/tcp"
 )
 
 var (
@@ -23,6 +23,8 @@ type Context interface {
 	String() string
 	// Close close proxy
 	Close()
+	// get frontend acceptor
+	Acceptor() *gorpc.Acceptor
 }
 
 // Server server
@@ -120,8 +122,8 @@ type _Proxy struct {
 	sync.RWMutex                     // mutex
 	gslogger.Log                     // mixin log APIs
 	name         string              //proxy name
-	frontend     *tcp.Server         // frontend
-	backend      *tcp.Server         // backend
+	frontend     *gorpc.Acceptor     // frontend
+	backend      *gorpc.Acceptor     // backend
 	proxy        Proxy               // proxy implement
 	clients      map[string]*_Client // handle agent clients
 	idgen        byte                // tunnel id gen
@@ -129,7 +131,7 @@ type _Proxy struct {
 }
 
 // Build .
-func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Context {
+func (builder *ProxyBuilder) Build(name string) Context {
 
 	proxy := &_Proxy{
 		Log:     gslogger.Get("gsproxy"),
@@ -139,8 +141,9 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 		tunnels: make(map[byte]byte),
 	}
 
-	proxy.frontend = tcp.NewServer(
-		gorpc.BuildPipeline(executor).Handler(
+	proxy.frontend = gorpc.NewAcceptor(
+		fmt.Sprintf("%s.frontend", name),
+		gorpc.BuildPipeline(time.Millisecond*10).Handler(
 			"gsproxy-profile",
 			gorpc.ProfileHandler,
 		).Handler(
@@ -160,28 +163,33 @@ func (builder *ProxyBuilder) Build(name string, executor gorpc.EventLoop) Contex
 			"gsproxy-client",
 			proxy.newClientHandler,
 		),
-	).Name("gsproxy-acceptor")
+	)
 
-	proxy.backend = tcp.NewServer(
-		gorpc.BuildPipeline(executor).Handler(
+	proxy.backend = gorpc.NewAcceptor(
+		fmt.Sprintf("%s.backend", name),
+		gorpc.BuildPipeline(time.Millisecond*10).Handler(
 			tunnelHandler,
 			proxy.newTunnelServer,
 		),
-	).Name("gsproxy-tunnel-server")
+	)
 
 	go func() {
-		if err := proxy.backend.Listen(builder.laddrE); err != nil {
+		if err := gorpc.TCPListen(proxy.backend, builder.laddrE); err != nil {
 			proxy.E("start agent backend error :%s", err)
 		}
 	}()
 
 	go func() {
-		if err := proxy.frontend.Listen(builder.laddrF); err != nil {
+		if err := gorpc.TCPListen(proxy.frontend, builder.laddrF); err != nil {
 			proxy.E("start agent frontend error :%s", err)
 		}
 	}()
 
 	return proxy
+}
+
+func (proxy *_Proxy) Acceptor() *gorpc.Acceptor {
+	return proxy.frontend
 }
 
 func (proxy *_Proxy) String() string {

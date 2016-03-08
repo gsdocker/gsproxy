@@ -1,9 +1,7 @@
 package gsproxy
 
 import (
-	"runtime"
 	"testing"
-	"time"
 
 	"./gsagent"
 	"github.com/gsrpc/gorpc"
@@ -71,18 +69,16 @@ func (mock *_MockAgent) RemoveTunnel(name string, pipeline gorpc.Pipeline) {
 }
 
 var mockAgent = &_MockAgent{
-	Tunnel: make(chan gorpc.Pipeline),
+	Tunnel: make(chan gorpc.Pipeline, 1),
 }
 
 var mockProxy = &_MockProxy{
-	Services: make(chan []*gorpc.NamedService),
+	Services: make(chan []*gorpc.NamedService, 1),
 }
 
-var eventLoop = gorpc.NewEventLoop(uint32(runtime.NumCPU()), 2048, 500*time.Millisecond)
+var agentSystem = gsagent.BuildAgent(mockAgent).Build("gsagent-test")
 
-var agentSystem = gsagent.BuildAgent(mockAgent).Build("gsagent-test", eventLoop)
-
-var gsProxy = BuildProxy(mockProxy).Build("gsproxy-test", eventLoop)
+var gsProxy = BuildProxy(mockProxy).Build("gsproxy-test")
 
 func TestConnect(t *testing.T) {
 

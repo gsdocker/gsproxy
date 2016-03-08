@@ -7,7 +7,6 @@ import (
 	"github.com/gsdocker/gsconfig"
 	"github.com/gsdocker/gslogger"
 	"github.com/gsrpc/gorpc"
-	"github.com/gsrpc/gorpc/tcp"
 )
 
 // Agent device agent
@@ -40,7 +39,7 @@ type Context interface {
 	// Close agent system
 	Close()
 	// Connect
-	Connect(name string, raddr string) (tcp.Client, error)
+	Connect(name string, raddr string) (gorpc.Client, error)
 }
 
 // AgentBuilder .
@@ -89,18 +88,16 @@ type _System struct {
 	name         string                    // name
 	timeout      time.Duration             // rpc call timeout
 	system       System                    // agent system
-	eventLoop    gorpc.EventLoop           // event loop
 	reconnect    time.Duration             // reconnect to gsproxy service delay time duration
 	cachedsize   int                       // send cached
 	tunnels      map[string]*_TunnelClient // register tunnel
 }
 
 // Build .
-func (builder *AgentBuilder) Build(name string, eventLoop gorpc.EventLoop) Context {
+func (builder *AgentBuilder) Build(name string) Context {
 	context := &_System{
 		name:       name,
 		system:     builder.system,
-		eventLoop:  eventLoop,
 		timeout:    builder.timeout,
 		reconnect:  builder.reconnect,
 		cachedsize: builder.cachedsize,
@@ -139,17 +136,21 @@ func (system *_System) removeTunnel(name string, tunnel *_TunnelClient, pipeline
 }
 
 // Connect
-func (system *_System) Connect(name string, raddr string) (tcp.Client, error) {
-
-	return tcp.BuildClient(
-		gorpc.BuildPipeline(system.eventLoop).Handler(
+func (system *_System) Connect(name string, raddr string) (gorpc.Client, error) {
+	builder := gorpc.NewClientBuilder(
+		name,
+		gorpc.BuildPipeline(time.Millisecond*10).Handler(
 			"profile",
 			gorpc.ProfileHandler,
 		).Handler(
 			"tunnel-client",
 			func() gorpc.Handler {
-				return system.newTunnelClient(name)
+				return system.newTunnelClient(raddr)
 			},
 		).Timeout(system.timeout),
-	).Cached(system.cachedsize).Remote(raddr).Reconnect(system.reconnect).Connect(name)
+	)
+
+	builder.Reconnect(system.timeout)
+
+	return gorpc.TCPConnect(builder, name, raddr)
 }

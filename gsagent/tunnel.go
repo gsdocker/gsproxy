@@ -16,13 +16,13 @@ type _Agent struct {
 	closed  bool
 }
 
-func newAgent(handler *_TunnelClient, device *gorpc.Device) (*_Agent, error) {
+func newAgent(ctx gorpc.Context, handler *_TunnelClient, device *gorpc.Device) (*_Agent, error) {
 	context := &_Agent{
 		handler: handler,
 		id:      device,
 	}
 
-	context.Sink = gorpc.NewSink(device.String(), handler.eventLoop, context, handler.timeout)
+	context.Sink = gorpc.NewSink(device.String(), context, ctx.Pipeline().TimeWheel(), handler.timeout)
 
 	var err error
 
@@ -58,18 +58,16 @@ type _TunnelClient struct {
 	name         string             // tunnel name
 	system       *_System           // system
 	context      gorpc.Context      // context
-	agents       map[string]*_Agent // agents
-	eventLoop    gorpc.EventLoop    // event loop
+	agents       map[string]*_Agent // agent
 	timeout      time.Duration      // rpc timeout
 }
 
 func (system *_System) newTunnelClient(name string) gorpc.Handler {
 	return &_TunnelClient{
-		Log:       gslogger.Get("gsagent-tunnel"),
-		name:      name,
-		system:    system,
-		eventLoop: system.eventLoop,
-		timeout:   system.timeout,
+		Log:     gslogger.Get("gsagent-tunnel"),
+		name:    name,
+		system:  system,
+		timeout: system.timeout,
 	}
 }
 
@@ -116,7 +114,7 @@ func (handler *_TunnelClient) Inactive(context gorpc.Context) {
 	handler.system.removeTunnel(handler.name, handler, context.Pipeline())
 }
 
-func (handler *_TunnelClient) agent(device *gorpc.Device) (*_Agent, error) {
+func (handler *_TunnelClient) agent(context gorpc.Context, device *gorpc.Device) (*_Agent, error) {
 
 	if agent, ok := handler.agents[device.String()]; ok {
 		if agent.closed {
@@ -126,7 +124,7 @@ func (handler *_TunnelClient) agent(device *gorpc.Device) (*_Agent, error) {
 		return agent, nil
 	}
 
-	agent, err := newAgent(handler, device)
+	agent, err := newAgent(context, handler, device)
 
 	if err != nil {
 		return nil, err
@@ -180,7 +178,7 @@ func (handler *_TunnelClient) MessageReceived(context gorpc.Context, message *go
 
 	handler.D("dispatch tunnel message to %s", tunnel.ID)
 
-	agent, err := handler.agent(tunnel.ID)
+	agent, err := handler.agent(context, tunnel.ID)
 
 	if err != nil {
 		handler.E("dispatch tunnel(%s) message -- failed\n%s", tunnel.ID, err)
