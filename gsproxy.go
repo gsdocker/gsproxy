@@ -147,14 +147,14 @@ func (builder *ProxyBuilder) Build(name string) Context {
 			"gsproxy-profile",
 			gorpc.ProfileHandler,
 		).Handler(
-			"gsproxy-dh",
-			func() gorpc.Handler {
-				return handler.NewCryptoServer(builder.dhkeyResolver)
-			},
-		).Handler(
 			"gsproxy-hb",
 			func() gorpc.Handler {
 				return handler.NewHeartbeatHandler(builder.timeout)
+			},
+		).Handler(
+			"gsproxy-dh",
+			func() gorpc.Handler {
+				return handler.NewCryptoServer(builder.dhkeyResolver)
 			},
 		).Handler(
 			transProxyHandler,
